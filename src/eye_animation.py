@@ -1,9 +1,10 @@
 import sys
 import json
 from PyQt5.QtWidgets import QWidget, QApplication, QStackedWidget
-from PyQt5.QtCore import QTimer, Qt
-from PyQt5.QtGui import QPainter, QColor, QPen
+from PyQt5.QtCore import QTimer, Qt, QRectF
+from PyQt5.QtGui import QPainter, QColor, QPen, QBrush
 import time
+import random
 
 class EyeWidget(QWidget):
     def __init__(self, eyes_data, parent=None):
@@ -12,6 +13,8 @@ class EyeWidget(QWidget):
         self.eyes_data = eyes_data
         self.is_blinking = False
         self.is_paused = False
+        self.blink_eye = "both"  # Can be "both", "left", or "right"
+        self.mode = "mim"  # Default mode, can be changed to "buon" or "cuoi"
         self.setGeometry(0, 0, 800, 480)
         self.setStyleSheet("background-color: black;")  # Black background as requested
 
@@ -19,6 +22,7 @@ class EyeWidget(QWidget):
         self.animation_cycle = 360  # Matches JSON animation length (360 frames)
         self.pause_duration = 1000  # 1 second pause in milliseconds
         self.frame_rate = 60  # 60 fps
+        self.single_blink_chance = 0.3  # 30% chance for left or right eye blink
 
         # Precompute positions and colors for performance
         self.eye_info = []
@@ -29,7 +33,7 @@ class EyeWidget(QWidget):
         scale_x = 800 / 150
         scale_y = 480 / 150
 
-        # Ensure we only process the correct number of eyes, pupils, etc.
+        # Process layers
         for layer in self.eyes_data:
             pos_data = layer["ks"]["p"]
             if pos_data.get("a", 0) == 1 and isinstance(pos_data["k"], list):
@@ -46,12 +50,17 @@ class EyeWidget(QWidget):
                     fill_color = QColor.fromRgbF(*fill_shape["c"]["k"])
                 else:
                     fill_color = QColor.fromRgbF(1, 1, 1)
+                pos_x, pos_y = keyframes[0]["s"]
+                pos_x *= scale_x
+                pos_y *= scale_y
                 self.eye_info.append({
-                    "keyframes": keyframes,
+                    "pos_x": pos_x,
+                    "pos_y": pos_y,
                     "outline_color": outline_color,
                     "fill_color": fill_color,
                     "eye_width": 30 * scale_x,
-                    "eye_height": 30 * scale_y
+                    "eye_height": 30 * scale_y,
+                    "is_left": "left" in name
                 })
             elif "pupil" in name and len(self.pupil_info) < 2:
                 pupil_shape = layer["shapes"][0]
@@ -60,7 +69,8 @@ class EyeWidget(QWidget):
                     "keyframes": keyframes,
                     "pupil_color": pupil_color,
                     "pupil_width": 15 * scale_x,
-                    "pupil_height": 15 * scale_y
+                    "pupil_height": 15 * scale_y,
+                    "is_left": "left" in name
                 })
             elif "eyebrow" in name and len(self.eyebrow_info) < 2:
                 eyebrow_shape = layer["shapes"][0]
@@ -84,7 +94,7 @@ class EyeWidget(QWidget):
                     "pos_x": pos_x,
                     "pos_y": pos_y,
                     "eyelash_color": eyelash_color,
-                    "eyelash_length": 5 * scale_x
+                    "eyelash_length": 15 * scale_x
                 })
             elif "mouth" in name and self.mouth_info is None:
                 mouth_shape = layer["shapes"][0]
@@ -96,8 +106,8 @@ class EyeWidget(QWidget):
                     "pos_x": pos_x,
                     "pos_y": pos_y,
                     "mouth_color": mouth_color,
-                    "mouth_width": 20 * scale_x,
-                    "mouth_height": 10 * scale_y
+                    "mouth_width": 30 * scale_x,
+                    "mouth_height": 25 * scale_y
                 }
 
         self.blink_timer = QTimer(self)
@@ -124,11 +134,27 @@ class EyeWidget(QWidget):
         self.pause_timer.setSingleShot(True)
         self.pause_timer.timeout.connect(self.start_blink_after_pause)
 
+        # self.change_mode_timer = QTimer(self)
+        # self.change_mode_timer.setInterval(5000)  # Change mode every 5 seconds
+        # self.change_mode_timer.timeout.connect(self.toggle_blink)
+        # self.change_mode_timer.start()
         self.current_frame = 0
         self.hide()
         print("EyeWidget initialized")
 
     def toggle_blink(self):
+        # Randomly choose blink type: both, left, or right
+        rand = random.random()
+        self.mode = random.choice(["mim", "buon", "cuoi"])  # Randomly choose mode
+        print(f"Current mode: {self.mode}")
+
+        if rand < self.single_blink_chance:
+            self.blink_eye = "left"
+        elif rand < 2 * self.single_blink_chance:
+            self.blink_eye = "right"
+        else:
+            self.blink_eye = "both"
+        print(f"Blink type: {self.blink_eye}")
         self.is_blinking = True
         self.blink_anim_step = 0
         self.blink_anim_direction = -1
@@ -181,15 +207,20 @@ class EyeWidget(QWidget):
         # Use current_frame for animation, freeze during pause
         frame = min(self.current_frame, self.animation_cycle - 1) if self.is_paused else self.current_frame
 
-        # Draw eyes
+        # Draw eyes (static positions)
         for eye in self.eye_info:
-            pos_x, pos_y = self.get_pupil_pos(eye["keyframes"], frame, 800/150, 480/150)
+            pos_x = eye["pos_x"]
+            pos_y = eye["pos_y"]
             eye_width = eye["eye_width"]
-            eye_height = eye["eye_height"] * self.blink_progress
+            # Apply blink_progress only to the selected eye(s)
+            should_blink = (self.blink_eye == "both" or
+                           (self.blink_eye == "left" and eye["is_left"]) or
+                           (self.blink_eye == "right" and not eye["is_left"]))
+            eye_height = eye["eye_height"] * self.blink_progress if should_blink else eye["eye_height"]
             outline_color = eye["outline_color"]
             fill_color = eye["fill_color"]
 
-            if self.blink_progress > 0.05:
+            if (should_blink and self.blink_progress > 0.05) or not should_blink:
                 painter.setBrush(Qt.NoBrush)
                 painter.setPen(outline_color)
                 painter.drawEllipse(int(pos_x - eye_width // 2), int(pos_y - eye_height // 2), int(eye_width), int(eye_height))
@@ -197,21 +228,20 @@ class EyeWidget(QWidget):
                 painter.setPen(Qt.NoPen)
                 painter.drawEllipse(int(pos_x - eye_width // 2), int(pos_y - eye_height // 2), int(eye_width), int(eye_height))
             else:
+                # Draw a curved arc when fully closed
                 painter.setPen(QPen(outline_color, 2))
                 painter.setBrush(Qt.NoBrush)
-                painter.drawLine(int(pos_x - eye_width // 2), int(pos_y), int(pos_x + eye_width // 2), int(pos_y))
+                painter.drawArc(int(pos_x - eye_width // 2), int(pos_y - eye_height // 4), int(eye_width), int(eye_height // 2), 180 * 16, -180 * 16)
 
-        # Draw pupils (only when eyes are open)
-        if not self.is_blinking:
-            for pupil in self.pupil_info:
-                pos_x, pos_y = self.get_pupil_pos(pupil["keyframes"], frame, 800/150, 480/150)
-                pupil_width = pupil["pupil_width"]
-                pupil_height = pupil["pupil_height"]
-                pupil_color = pupil["pupil_color"]
-
-                painter.setBrush(pupil_color)
-                painter.setPen(Qt.NoPen)
-                painter.drawEllipse(int(pos_x - pupil_width // 2), int(pos_y - pupil_height // 2), int(pupil_width), int(pupil_height))
+        # Draw pupils (animated positions, scaled with blink_progress)
+        for pupil in self.pupil_info:
+            pos_x, pos_y = self.get_pupil_pos(pupil["keyframes"], frame, 800/150, 480/150)
+            pupil_width = pupil["pupil_width"] * self.blink_progress if self.is_blinking and (self.blink_eye == "both" or (self.blink_eye == "left" and pupil["is_left"]) or (self.blink_eye == "right" and not pupil["is_left"])) else pupil["pupil_width"]
+            pupil_height = pupil["pupil_height"] * self.blink_progress if self.is_blinking and (self.blink_eye == "both" or (self.blink_eye == "left" and pupil["is_left"]) or (self.blink_eye == "right" and not pupil["is_left"])) else pupil["pupil_height"]
+            pupil_color = pupil["pupil_color"]
+            painter.setBrush(pupil_color)
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(int(pos_x - pupil_width // 2), int(pos_y - pupil_height // 2), int(pupil_width), int(pupil_height))
 
         # Draw eyebrows
         for eyebrow in self.eyebrow_info:
@@ -245,10 +275,43 @@ class EyeWidget(QWidget):
             mouth_width = self.mouth_info["mouth_width"]
             mouth_height = self.mouth_info["mouth_height"]
             mouth_color = self.mouth_info["mouth_color"]
+            #draw_method = random.choice(["arc", "chord"])  # Randomly choose between arc and chord
+            if self.mode == "mim":
+                rect = QRectF(
+                    pos_x - mouth_width // 2,
+                    pos_y - mouth_height // 2,
+                    mouth_width,
+                    mouth_height
+                )
+                painter.setPen(QPen(mouth_color, 4))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawArc(rect, 0 * 16, -180 * 16)
 
-            painter.setPen(QPen(mouth_color, 2))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawArc(int(pos_x - mouth_width // 2), int(pos_y - mouth_height // 2), int(mouth_width), int(mouth_height), 0 * 16, -180 * 16)
+            elif self.mode == "buon":
+                rect = QRectF(
+                    pos_x - mouth_width // 2,
+                    pos_y + 0,
+                    mouth_width,
+                    mouth_height
+                )
+                painter.setPen(QPen(Qt.gray, 4))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawArc(rect, 0 * 16, 180 * 16)
+
+            elif self.mode == "cuoi":
+                rect = QRectF(
+                    pos_x - mouth_width // 2,
+                    pos_y - mouth_height // 2,
+                    mouth_width,
+                    mouth_height
+                )
+                pen2 = QPen(mouth_color, 2)
+                painter.setPen(pen2)
+                painter.setBrush(QBrush(mouth_color, Qt.SolidPattern))
+                painter.drawChord(rect, -180 * 16, 180 * 16)
+            # painter.setPen(QPen(mouth_color, 2))
+            # painter.setBrush(Qt.NoBrush)
+            # painter.drawArc(int(pos_x - mouth_width // 2), int(pos_y - mouth_height // 2), int(mouth_width), int(mouth_height), 0 * 16, -180 * 16)
 
     def cleanup(self):
         self.blink_timer.stop()
