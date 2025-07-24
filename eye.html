@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Animated Eyes - Multiple Expressions</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            background: #000000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+        }
+
+
+        .title {
+            color: white;
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .controls {
+            color: white;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .face {
+            position: relative;
+            width: 800px;
+            height: 480px;
+        }
+
+        .eye {
+            width: 200px;
+            height: 200px;
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.1s ease;
+            overflow: hidden;
+        }
+
+        .eye.left {
+            top: 20%;
+            left: 10%;
+        }
+
+        .eye.right {
+            top: 20%;
+            right: 10%;
+        }
+
+        .pupil {
+            width: 140px;
+            height: 140px;
+            background: black;
+            border-radius: 50%;
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: transform 0.1s ease;
+        }
+
+        .highlight {
+            width: 50px;
+            height: 50px;
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            top: 20px;
+            left: 20px;
+        }
+
+        .mouth {
+            position: absolute;
+            bottom: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            transition: all 0.2s ease;
+        }
+
+        /* Expression Styles */
+        .face.blink .eye {
+            height: 15px;
+            border-radius: 100px;
+        }
+
+        .face.blink .pupil,
+        .face.blink .highlight {
+            opacity: 0;
+        }
+
+        .face.blink-left .eye.left {
+            height: 15px;
+            border-radius: 100px;
+        }
+
+        .face.blink-left .eye.left .pupil,
+        .face.blink-left .eye.left .highlight {
+            opacity: 0;
+        }
+
+        .face.blink-right .eye.right {
+            height: 15px;
+            border-radius: 100px;
+        }
+
+        .face.blink-right .eye.right .pupil,
+        .face.blink-right .eye.right .highlight {
+            opacity: 0;
+        }
+
+        .face.glare .eye {
+            height: 80px;
+            width: 250px;
+        }
+
+        .face.sad .eye {
+            border-radius: 50% 50% 80% 80%;
+            transform: rotate(10deg);
+        }
+
+        .face.sad .eye.right {
+            transform: rotate(-10deg);
+        }
+
+        .face.happy .eye {
+            border-radius: 80% 80% 50% 50%;
+            height: 120px;
+        }
+
+        /* Curved eye styles for sad and happy */
+        .curved-eye {
+            width: 200px;
+            height: 30px;
+            border: 10px solid white;
+            border-radius: 50%;
+            position: absolute;
+            background: transparent;
+        }
+
+        .curved-eye.sad {
+            border-top: none;
+            transform: rotate(180deg);
+        }
+
+        .curved-eye.happy {
+            border-bottom: none;
+        }
+
+        /* Sad eye styles */
+        .sad-eye {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="title" id="title">Mắt mở to (1/9)</div>
+    <div class="controls">F11: Fullscreen | ESC: Exit | Click: Manual blink | Space: Next expression</div>
+    
+    <div class="face" id="face">
+        <div class="eye left" id="leftEye">
+            <div class="pupil" id="leftPupil">
+                <div class="highlight"></div>
+            </div>
+        </div>
+        <div class="eye right" id="rightEye">
+            <div class="pupil" id="rightPupil">
+                <div class="highlight"></div>
+            </div>
+        </div>
+        <svg class="mouth" id="mouth" width="200" height="60" viewBox="0 0 200 60">
+            <path id="mouthPath" d="M 20 30 Q 100 60 180 30" fill="none" stroke="white" stroke-width="8"/>
+        </svg>
+    </div>
+
+    <script>
+        class EyeAnimator {
+            constructor() {
+                this.expressions = [
+                    "open", "blinking", "blinking_left", "blinking_right", 
+                    "looking_down", "looking_up", "glaring", "sad", "happy"
+                ];
+                
+                this.titles = [
+                    "Mắt mở to", "Mắt chớp liên tục", "Chớp mắt trái", "Chớp mắt phải",
+                    "Mắt nhìn xuống", "Mắt nhìn lên", "Mắt lườm", 
+                    "Mắt cụp xuống", "Mắt cười"
+                ];
+                
+                this.currentIndex = 0;
+                this.expression = this.expressions[0];
+                this.t = 0;
+                this.animationId = null;
+                this.expressionTimer = null;
+                
+                // Animation states
+                this.blinkDirection = -1;
+                this.blinkHeight = 200;
+                this.leftBlinkHeight = 200;
+                this.rightBlinkHeight = 200;
+                this.pupilOffset = { x: 0, y: 0 };
+                this.lookDirection = { x: 0, y: 0 };
+                this.eyeState = 0;
+                this.inDelay = false;
+                this.delayStart = 0;
+                this.glareHeight = 30;
+                this.glareDirection = 1;
+                
+                this.initElements();
+                this.startAnimation();
+                this.startExpressionTimer();
+                this.setupEventListeners();
+            }
+            
+            initElements() {
+                this.face = document.getElementById('face');
+                this.leftEye = document.getElementById('leftEye');
+                this.rightEye = document.getElementById('rightEye');
+                this.leftPupil = document.getElementById('leftPupil');
+                this.rightPupil = document.getElementById('rightPupil');
+                this.mouth = document.getElementById('mouth');
+                this.mouthPath = document.getElementById('mouthPath');
+                this.title = document.getElementById('title');
+                
+                // Cập nhật title ban đầu
+                if (this.title) {
+                    this.title.textContent = `${this.titles[this.currentIndex]} (${this.currentIndex + 1}/${this.expressions.length})`;
+                }
+            }
+            
+            setupEventListeners() {
+                document.addEventListener('click', () => this.manualBlink());
+                document.addEventListener('keydown', (e) => this.handleKeyPress(e));
+                document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+            }
+            
+            handleKeyPress(e) {
+                switch(e.code) {
+                    case 'F11':
+                        e.preventDefault();
+                        this.toggleFullscreen();
+                        break;
+                    case 'Escape':
+                        if (document.fullscreenElement) {
+                            document.exitFullscreen();
+                        }
+                        break;
+                    case 'Space':
+                        e.preventDefault();
+                        this.nextExpression();
+                        break;
+                }
+            }
+            
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen();
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+            
+            handleMouseMove(e) {
+                if (this.expression === 'open') {
+                    const pupils = [this.leftPupil, this.rightPupil];
+                    pupils.forEach(pupil => {
+                        const eye = pupil.parentElement;
+                        const eyeRect = eye.getBoundingClientRect();
+                        const eyeCenterX = eyeRect.left + eyeRect.width / 2;
+                        const eyeCenterY = eyeRect.top + eyeRect.height / 2;
+
+                        const angle = Math.atan2(e.clientY - eyeCenterY, e.clientX - eyeCenterX);
+                        const distance = Math.min(15, Math.sqrt(
+                            Math.pow(e.clientX - eyeCenterX, 2) + Math.pow(e.clientY - eyeCenterY, 2)
+                        ) / 10);
+
+                        const pupilX = Math.cos(angle) * distance;
+                        const pupilY = Math.sin(angle) * distance;
+
+                        pupil.style.transform = `translate(${pupilX}px, ${pupilY}px)`;
+                    });
+                }
+            }
+            
+            manualBlink() {
+                if (this.expression !== 'blinking') {
+                    this.face.classList.add('blink');
+                    setTimeout(() => {
+                        this.face.classList.remove('blink');
+                    }, 200);
+                }
+            }
+            
+            nextExpression() {
+                this.currentIndex = (this.currentIndex + 1) % this.expressions.length;
+                this.setExpression(this.currentIndex);
+            }
+            
+            setExpression(index) {
+                this.currentIndex = index;
+                this.expression = this.expressions[index];
+                
+                // Cập nhật title
+                if (this.title) {
+                    this.title.textContent = `${this.titles[index]} (${index + 1}/${this.expressions.length})`;
+                }
+                
+                // Reset animation states
+                this.resetAnimationStates();
+                this.clearFaceClasses();
+                
+                // Update mouth for expression
+                this.updateMouth();
+            }
+            
+            resetAnimationStates() {
+                this.blinkDirection = -1;
+                this.blinkHeight = 200;
+                this.leftBlinkHeight = 200;
+                this.rightBlinkHeight = 200;
+                this.pupilOffset = { x: 0, y: 0 };
+                this.lookDirection = { x: 0, y: 0 };
+                this.eyeState = 0;
+                this.inDelay = false;
+                this.glareHeight = 30;
+                this.glareDirection = 1;
+                
+                // Reset pupil positions
+                this.leftPupil.style.transform = 'translate(0px, 0px)';
+                this.rightPupil.style.transform = 'translate(0px, 0px)';
+            }
+            
+            clearFaceClasses() {
+                this.face.classList.remove('blink', 'blink-left', 'blink-right', 'glare', 'sad', 'happy');
+                
+                // Xóa tất cả các elements mắt cong
+                const curvedEyes = document.querySelectorAll('.curved-eye');
+                curvedEyes.forEach(el => el.remove());
+                
+                const sadEyes = document.querySelectorAll('.sad-eye');
+                sadEyes.forEach(el => el.remove());
+                
+                const happyEyes = document.querySelectorAll('.happy-eye');
+                happyEyes.forEach(el => el.remove());
+                
+                // Reset về trạng thái mắt bình thường
+                this.leftEye.style.height = '200px';
+                this.rightEye.style.height = '200px';
+                this.leftEye.style.width = '200px';
+                this.rightEye.style.width = '200px';
+                this.leftEye.style.borderRadius = '50%';
+                this.rightEye.style.borderRadius = '50%';
+                this.leftEye.style.transform = '';
+                this.rightEye.style.transform = '';
+                this.leftEye.style.opacity = '1';
+                this.rightEye.style.opacity = '1';
+                
+                // Reset pupil opacity (đôi khi bị ẩn khi blink)
+                const leftPupil = this.leftEye.querySelector('.pupil');
+                const rightPupil = this.rightEye.querySelector('.pupil');
+                const leftHighlight = this.leftEye.querySelector('.highlight');
+                const rightHighlight = this.rightEye.querySelector('.highlight');
+                
+                if (leftPupil) leftPupil.style.opacity = '1';
+                if (rightPupil) rightPupil.style.opacity = '1';
+                if (leftHighlight) leftHighlight.style.opacity = '1';
+                if (rightHighlight) rightHighlight.style.opacity = '1';
+            }
+            
+            updateMouth() {
+                const mouth = this.mouth;
+                const path = this.mouthPath;
+                
+                // Reset về trạng thái mặc định trước
+                mouth.setAttribute('viewBox', '0 0 200 60');
+                path.setAttribute('fill', 'none');
+                path.setAttribute('stroke', 'white');
+                
+                switch(this.expression) {
+                    case 'happy':
+                        mouth.setAttribute('width', '200');
+                        mouth.setAttribute('height', '80');
+                        mouth.setAttribute('viewBox', '0 0 200 80');
+                        path.setAttribute('d', 'M 20 60 Q 100 20 180 60');
+                        path.setAttribute('stroke-width', '8');
+                        break;
+                    case 'sad':
+                        mouth.setAttribute('width', '180');
+                        mouth.setAttribute('height', '50');
+                        mouth.setAttribute('viewBox', '0 0 180 50');
+                        path.setAttribute('d', 'M 20 15 Q 90 45 160 15');
+                        path.setAttribute('stroke-width', '8');
+                        break;
+                    case 'glaring':
+                        mouth.setAttribute('width', '180');
+                        mouth.setAttribute('height', '20');
+                        mouth.setAttribute('viewBox', '0 0 180 20');
+                        path.setAttribute('d', 'M 20 15 L 40 5 L 60 15 L 80 5 L 100 15 L 120 5 L 140 15 L 160 5');
+                        path.setAttribute('stroke-width', '5');
+                        break;
+                    case 'looking_down':
+                        mouth.setAttribute('width', '60');
+                        mouth.setAttribute('height', '60');
+                        mouth.setAttribute('viewBox', '0 0 60 60');
+                        path.setAttribute('d', 'M 30 5 A 25 25 0 1 1 29.99 5');
+                        path.setAttribute('stroke-width', '6');
+                        break;
+                    case 'looking_up':
+                        mouth.setAttribute('width', '70');
+                        mouth.setAttribute('height', '50');
+                        mouth.setAttribute('viewBox', '0 0 70 50');
+                        path.setAttribute('d', 'M 15 25 Q 35 35 55 25 Q 35 35 15 25');
+                        path.setAttribute('stroke-width', '4');
+                        break;
+                    default:
+                        mouth.setAttribute('width', '200');
+                        mouth.setAttribute('height', '60');
+                        path.setAttribute('d', 'M 20 30 Q 100 60 180 30');
+                        path.setAttribute('stroke-width', '8');
+                }
+            }
+            
+            startAnimation() {
+                const animate = () => {
+                    this.t += 0.1;
+                    this.updateAnimation();
+                    this.animationId = requestAnimationFrame(animate);
+                };
+                animate();
+            }
+            
+            startExpressionTimer() {
+                this.expressionTimer = setInterval(() => {
+                    this.nextExpression();
+                }, 5000);
+            }
+            
+            updateAnimation() {
+                switch(this.expression) {
+                    case 'open':
+                        // Keep normal eye tracking
+                        break;
+                        
+                    case 'blinking':
+                        this.animateBlinking();
+                        break;
+                        
+                    case 'blinking_left':
+                        this.animateBlinkingLeft();
+                        break;
+                        
+                    case 'blinking_right':
+                        this.animateBlinkingRight();
+                        break;
+                        
+                    case 'looking_down':
+                        this.animateLookingDown();
+                        break;
+                        
+                    case 'looking_up':
+                        this.animateLookingUp();
+                        break;
+                        
+                    case 'glaring':
+                        this.animateGlaring();
+                        break;
+                        
+                    case 'sad':
+                        this.animateSad();
+                        break;
+                        
+                    case 'happy':
+                        this.animateHappy();
+                        break;
+                }
+            }
+            
+            animateBlinking() {
+                if (this.inDelay) {
+                    if (Date.now() - this.delayStart >= 200) {
+                        this.inDelay = false;
+                        this.blinkDirection *= -1;
+                    }
+                } else {
+                    this.blinkHeight += 6 * this.blinkDirection;
+                    
+                    if (this.blinkHeight <= 15) {
+                        this.blinkHeight = 15;
+                        this.inDelay = true;
+                        this.delayStart = Date.now();
+                    } else if (this.blinkHeight >= 200) {
+                        this.blinkHeight = 200;
+                        this.inDelay = true;
+                        this.delayStart = Date.now();
+                    }
+                    
+                    this.leftEye.style.height = this.blinkHeight + 'px';
+                    this.rightEye.style.height = this.blinkHeight + 'px';
+                    
+                    if (this.blinkHeight <= 15) {
+                        this.leftEye.style.borderRadius = '100px';
+                        this.rightEye.style.borderRadius = '100px';
+                    } else {
+                        this.leftEye.style.borderRadius = '50%';
+                        this.rightEye.style.borderRadius = '50%';
+                    }
+                }
+            }
+            
+            animateBlinkingLeft() {
+                if (this.inDelay) {
+                    if (Date.now() - this.delayStart >= 200) {
+                        this.inDelay = false;
+                        this.blinkDirection *= -1;
+                    }
+                } else {
+                    this.leftBlinkHeight += 6 * this.blinkDirection;
+                    
+                    if (this.leftBlinkHeight <= 15) {
+                        this.leftBlinkHeight = 15;
+                        this.inDelay = true;
+                        this.delayStart = Date.now();
+                    } else if (this.leftBlinkHeight >= 200) {
+                        this.leftBlinkHeight = 200;
+                        this.inDelay = true;
+                        this.delayStart = Date.now();
+                    }
+                    
+                    this.leftEye.style.height = this.leftBlinkHeight + 'px';
+                    
+                    if (this.leftBlinkHeight <= 15) {
+                        this.leftEye.style.borderRadius = '100px';
+                    } else {
+                        this.leftEye.style.borderRadius = '50%';
+                    }
+                }
+            }
+            
+            animateBlinkingRight() {
+                if (this.inDelay) {
+                    if (Date.now() - this.delayStart >= 200) {
+                        this.inDelay = false;
+                        this.blinkDirection *= -1;
+                    }
+                } else {
+                    this.rightBlinkHeight += 6 * this.blinkDirection;
+                    
+                    if (this.rightBlinkHeight <= 15) {
+                        this.rightBlinkHeight = 15;
+                        this.inDelay = true;
+                        this.delayStart = Date.now();
+                    } else if (this.rightBlinkHeight >= 200) {
+                        this.rightBlinkHeight = 200;
+                        this.inDelay = true;
+                        this.delayStart = Date.now();
+                    }
+                    
+                    this.rightEye.style.height = this.rightBlinkHeight + 'px';
+                    
+                    if (this.rightBlinkHeight <= 15) {
+                        this.rightEye.style.borderRadius = '100px';
+                    } else {
+                        this.rightEye.style.borderRadius = '50%';
+                    }
+                }
+            }
+            
+            animateLookingDown() {
+                if (this.inDelay) {
+                    if (Date.now() - this.delayStart >= 800) {
+                        this.inDelay = false;
+                        this.eyeState = (this.eyeState + 1) % 5;
+                    }
+                } else {
+                    if (this.eyeState === 0 || this.eyeState === 4) {
+                        // Moving vertically
+                        this.pupilOffset.y += 0.8;
+                        if (this.pupilOffset.y >= 40) {
+                            this.pupilOffset.y = 40;
+                            this.inDelay = true;
+                            this.delayStart = Date.now();
+                        }
+                    } else {
+                        // Moving horizontally
+                        let targetX = 0;
+                        if (this.eyeState === 1) targetX = -40;
+                        else if (this.eyeState === 2) targetX = 40;
+                        else if (this.eyeState === 3) targetX = 0;
+                        
+                        if (Math.abs(this.pupilOffset.x - targetX) > 0.5) {
+                            this.pupilOffset.x += (targetX - this.pupilOffset.x) * 0.05;
+                        } else {
+                            this.pupilOffset.x = targetX;
+                            this.inDelay = true;
+                            this.delayStart = Date.now();
+                        }
+                    }
+                    
+                    this.leftPupil.style.transform = `translate(${this.pupilOffset.x}px, ${this.pupilOffset.y}px)`;
+                    this.rightPupil.style.transform = `translate(${this.pupilOffset.x}px, ${this.pupilOffset.y}px)`;
+                }
+            }
+            
+            animateLookingUp() {
+                if (this.inDelay) {
+                    if (Date.now() - this.delayStart >= 800) {
+                        this.inDelay = false;
+                        this.eyeState = (this.eyeState + 1) % 5;
+                    }
+                } else {
+                    if (this.eyeState === 0 || this.eyeState === 4) {
+                        // Moving vertically
+                        this.pupilOffset.y -= 0.8;
+                        if (this.pupilOffset.y <= -40) {
+                            this.pupilOffset.y = -40;
+                            this.inDelay = true;
+                            this.delayStart = Date.now();
+                        }
+                    } else {
+                        // Moving horizontally
+                        let targetX = 0;
+                        if (this.eyeState === 1) targetX = -40;
+                        else if (this.eyeState === 2) targetX = 40;
+                        else if (this.eyeState === 3) targetX = 0;
+                        
+                        if (Math.abs(this.pupilOffset.x - targetX) > 0.5) {
+                            this.pupilOffset.x += (targetX - this.pupilOffset.x) * 0.05;
+                        } else {
+                            this.pupilOffset.x = targetX;
+                            this.inDelay = true;
+                            this.delayStart = Date.now();
+                        }
+                    }
+                    
+                    this.leftPupil.style.transform = `translate(${this.pupilOffset.x}px, ${this.pupilOffset.y}px)`;
+                    this.rightPupil.style.transform = `translate(${this.pupilOffset.x}px, ${this.pupilOffset.y}px)`;
+                }
+            }
+            
+            animateGlaring() {
+                this.glareHeight += this.glareDirection * 2;
+                if (this.glareHeight >= 80 || this.glareHeight <= 30) {
+                    this.glareDirection *= -1;
+                }
+                
+                this.leftEye.style.height = this.glareHeight + 'px';
+                this.rightEye.style.height = this.glareHeight + 'px';
+                this.leftEye.style.width = '250px';
+                this.rightEye.style.width = '250px';
+                
+                // Glaring pupils
+                this.leftPupil.style.transform = 'translate(20px, 10px)';
+                this.rightPupil.style.transform = 'translate(-20px, 10px)';
+            }
+            
+            animateSad() {
+                // Ẩn mắt gốc
+                this.leftEye.style.opacity = '0';
+                this.rightEye.style.opacity = '0';
+                
+                // Tạo đường cong mắt buồn nếu chưa có
+                if (!document.querySelector('.sad-eye')) {
+                    this.createSadEyes();
+                }
+            }
+            
+            createSadEyes() {
+                // Tạo SVG cho mắt trái (cong xuống)
+                const leftSadEye = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                leftSadEye.setAttribute('class', 'sad-eye left-sad');
+                leftSadEye.style.position = 'absolute';
+                leftSadEye.style.left = '80px';
+                leftSadEye.style.top = '96px';
+                leftSadEye.style.zIndex = '10';
+                leftSadEye.setAttribute('width', '200');
+                leftSadEye.setAttribute('height', '80');
+                leftSadEye.setAttribute('viewBox', '0 0 200 80');
+                
+                const leftPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                leftPath.setAttribute('d', 'M 20 20 Q 100 60 180 20');
+                leftPath.setAttribute('fill', 'none');
+                leftPath.setAttribute('stroke', 'white');
+                leftPath.setAttribute('stroke-width', '8');
+                leftPath.setAttribute('stroke-linecap', 'round');
+                leftSadEye.appendChild(leftPath);
+                
+                // Tạo SVG cho mắt phải (cong xuống)
+                const rightSadEye = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                rightSadEye.setAttribute('class', 'sad-eye right-sad');
+                rightSadEye.style.position = 'absolute';
+                rightSadEye.style.right = '80px';
+                rightSadEye.style.top = '96px';
+                rightSadEye.style.zIndex = '10';
+                rightSadEye.setAttribute('width', '200');
+                rightSadEye.setAttribute('height', '80');
+                rightSadEye.setAttribute('viewBox', '0 0 200 80');
+                
+                const rightPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                rightPath.setAttribute('d', 'M 20 20 Q 100 60 180 20');
+                rightPath.setAttribute('fill', 'none');
+                rightPath.setAttribute('stroke', 'white');
+                rightPath.setAttribute('stroke-width', '8');
+                rightPath.setAttribute('stroke-linecap', 'round');
+                rightSadEye.appendChild(rightPath);
+                
+                this.face.appendChild(leftSadEye);
+                this.face.appendChild(rightSadEye);
+            }
+            
+            animateHappy() {
+                // Ẩn mắt gốc
+                this.leftEye.style.opacity = '0';
+                this.rightEye.style.opacity = '0';
+                
+                // Tạo đường cong mắt cười nếu chưa có
+                if (!document.querySelector('.happy-eye')) {
+                    this.createHappyEyes();
+                }
+            }
+            
+            createHappyEyes() {
+                // Tạo SVG cho mắt trái (cong lên)
+                const leftHappyEye = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                leftHappyEye.setAttribute('class', 'happy-eye left-happy');
+                leftHappyEye.style.position = 'absolute';
+                leftHappyEye.style.left = '80px';
+                leftHappyEye.style.top = '96px';
+                leftHappyEye.style.zIndex = '10';
+                leftHappyEye.setAttribute('width', '200');
+                leftHappyEye.setAttribute('height', '80');
+                leftHappyEye.setAttribute('viewBox', '0 0 200 80');
+                
+                const leftPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                leftPath.setAttribute('d', 'M 20 60 Q 100 20 180 60');
+                leftPath.setAttribute('fill', 'none');
+                leftPath.setAttribute('stroke', 'white');
+                leftPath.setAttribute('stroke-width', '8');
+                leftPath.setAttribute('stroke-linecap', 'round');
+                leftHappyEye.appendChild(leftPath);
+                
+                // Tạo SVG cho mắt phải (cong lên)
+                const rightHappyEye = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                rightHappyEye.setAttribute('class', 'happy-eye right-happy');
+                rightHappyEye.style.position = 'absolute';
+                rightHappyEye.style.right = '80px';
+                rightHappyEye.style.top = '96px';
+                rightHappyEye.style.zIndex = '10';
+                rightHappyEye.setAttribute('width', '200');
+                rightHappyEye.setAttribute('height', '80');
+                rightHappyEye.setAttribute('viewBox', '0 0 200 80');
+                
+                const rightPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                rightPath.setAttribute('d', 'M 20 60 Q 100 20 180 60');
+                rightPath.setAttribute('fill', 'none');
+                rightPath.setAttribute('stroke', 'white');
+                rightPath.setAttribute('stroke-width', '8');
+                rightPath.setAttribute('stroke-linecap', 'round');
+                rightHappyEye.appendChild(rightPath);
+                
+                this.face.appendChild(leftHappyEye);
+                this.face.appendChild(rightHappyEye);
+            }
+            
+            destroy() {
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                }
+                if (this.expressionTimer) {
+                    clearInterval(this.expressionTimer);
+                }
+            }
+        }
+        
+        // Initialize the eye animator
+        const eyeAnimator = new EyeAnimator();
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            eyeAnimator.destroy();
+        });
+    </script>
+</body>
+</html>
